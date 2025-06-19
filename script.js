@@ -1347,31 +1347,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Creator logic
-    const creatorText = document.createElement('div');
-    creatorText.id = 'creatorText';
-    creatorText.style.fontFamily = "Nunito, Arial, sans-serif";
-    creatorText.style.fontSize = '1.1em';
-    creatorText.style.opacity = '0.5';
-    creatorText.style.marginTop = '-0.7em';
-    creatorText.style.marginBottom = '1.2em';
-    creatorText.style.textAlign = 'left';
-    creatorText.style.cursor = 'pointer';
-    creatorText.style.userSelect = 'text';
-    creatorText.style.minHeight = '1.2em';
-    creatorText.style.transition = 'opacity 0.2s';
-    creatorText.addEventListener('click', () => {
-        const newCreator = prompt('Enter creator name (without @):', creatorText.textContent.replace(/^@/, ''));
-        if (newCreator !== null) setCreator(newCreator);
-    });
+    const creatorText = document.getElementById('creatorText');
+    const editCreatorBtn = document.getElementById('editCreatorBtn');
     function setCreator(name) {
-        creatorText.textContent = name ? '@' + name.replace(/^@/, '') : '';
+        creatorText.textContent = name ? '@' + name.replace(/^@/, '') : '@';
         currentCreator = name ? name.replace(/^@/, '') : '';
     }
     let currentCreator = '';
-    // Insert creatorText under the title
-    const titleRow = document.querySelector('.tierlist-title-row');
-    if (titleRow && !document.getElementById('creatorText')) {
-        titleRow.appendChild(creatorText);
+    creatorText.addEventListener('click', () => {
+        const newCreator = prompt('Enter creator name (without @):', currentCreator);
+        if (newCreator !== null) setCreator(newCreator);
+    });
+    if (editCreatorBtn) {
+        editCreatorBtn.addEventListener('click', () => {
+            const newCreator = prompt('Enter creator name (without @):', currentCreator);
+            if (newCreator !== null) setCreator(newCreator);
+        });
     }
     setCreator('');
 }); 
