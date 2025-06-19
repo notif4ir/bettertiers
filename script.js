@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadTierlistButton = document.getElementById('loadTierlist');
     const loadTierlistInput = document.getElementById('loadTierlistInput');
     const saveScreenshotButton = document.getElementById('saveScreenshot');
+    const itemPoolCounter = document.getElementById('itemPoolCounter');
 
     // Modal elements
     const addItemModal = document.getElementById('addItemModal');
@@ -45,6 +46,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // Track hovered item/tier
     let hoveredElement = null;
 
+    function updateItemPoolCounter() {
+        const poolCount = itemPool.children.length;
+        let total = poolCount;
+        document.querySelectorAll('.tier-content').forEach(tc => {
+            total += tc.children.length;
+        });
+        itemPoolCounter.textContent = `${poolCount} / ${total}`;
+    }
+
+    // Call updateItemPoolCounter after any item change
+    const observer = new MutationObserver(updateItemPoolCounter);
+
     // Add hover listeners to items and tiers
     function addHoverListeners(el) {
         el.addEventListener('mouseenter', () => { hoveredElement = el; });
@@ -68,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         zoomIcon.onclick = (e) => {
             e.stopPropagation();
-            showImagePopup(img.src);
+            showImagePopup(img.src, item.getAttribute('data-name'));
         };
         return item;
     };
@@ -89,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         zoomIcon.onclick = (e) => {
             e.stopPropagation();
-            showImagePopup(img.src);
+            showImagePopup(img.src, item.getAttribute('data-name'));
         };
         return item;
     };
@@ -313,6 +326,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         tierLabel.addEventListener('pointerdown', e => startTierDrag(e, tierRow));
         setupDropZone(tierContent);
+        // Observe for item changes
+        observeTierContent(tierContent);
+        updateItemPoolCounter();
         return tierRow;
     }
 
@@ -510,19 +526,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 ) {
                     found = true;
                     zone.classList.add('dragging-over');
-                    // Insert at closest position
+                    // Insert at closest position (fix for multi-row)
                     const items = Array.from(zone.children).filter(child => child !== dragData);
                     let closest = null, closestDist = Infinity;
                     items.forEach(child => {
                         const box = child.getBoundingClientRect();
-                        const dist = Math.abs(e.clientX - (box.left + box.width / 2));
+                        // Use both X and Y distance for multi-row
+                        const dx = e.clientX - (box.left + box.width / 2);
+                        const dy = e.clientY - (box.top + box.height / 2);
+                        const dist = Math.sqrt(dx * dx + dy * dy);
                         if (dist < closestDist) {
                             closestDist = dist;
                             closest = child;
                         }
                     });
                     if (closest) {
-                        if (e.clientX < closest.getBoundingClientRect().left + closest.offsetWidth / 2) {
+                        // Insert before or after based on pointer position
+                        const box = closest.getBoundingClientRect();
+                        if (e.clientY < box.top + box.height / 2 || (Math.abs(e.clientY - (box.top + box.height / 2)) < box.height / 2 && e.clientX < box.left + box.width / 2)) {
                             zone.insertBefore(dragData, closest);
                         } else {
                             zone.insertBefore(dragData, closest.nextSibling);
@@ -690,18 +711,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     tier.items.forEach(item => {
                         const itemElement = createItemFromData(item);
                         tierContent.appendChild(itemElement);
-                        addHoverListeners(itemElement);
                     });
                 }
-                addHoverListeners(tierRow);
+                // Observe for item changes
+                observeTierContent(tierContent);
             });
 
             // Add items to pool
             data.poolItems.forEach(item => {
                 const itemElement = createItemFromData(item);
                 itemPool.appendChild(itemElement);
-                addHoverListeners(itemElement);
             });
+            updateItemPoolCounter();
 
         } catch (error) {
             console.error('Error loading tierlist:', error);
@@ -751,6 +772,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.fillStyle = '#1a1a1a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // Use Nunito font
+        ctx.font = 'bold 24px Nunito, Arial, sans-serif';
+        ctx.textBaseline = 'middle';
+
         // Function to draw rounded rectangle
         function roundRect(ctx, x, y, width, height, radius) {
             ctx.beginPath();
@@ -769,65 +794,83 @@ document.addEventListener('DOMContentLoaded', () => {
         // Draw each tier
         const tiers = Array.from(tierListEl.children);
         let currentY = padding;
-
+        const itemBoxSize = 88;
+        const itemBoxGap = 12;
+        const labelHeight = 24; // for the label at the bottom
+        const labelFont = 'bold 16px Nunito, Arial, sans-serif';
+        const labelBg = 'rgba(30,30,30,0.85)';
+        const labelPad = 4;
+        const labelTextColor = '#e0e0e0';
+        const labelLineHeight = 1.1;
+        const labelBoxHeight = 22;
+        const labelFontSize = 16;
         for (const tier of tiers) {
             const tierHeight = tier.offsetHeight;
             const labelWidth = 100; // Fixed width of tier labels
-            
+            const tierColor = tier.getAttribute('data-color') || '#FF4D4D';
+            const tierFontSize = parseInt(tier.getAttribute('data-font-size'), 10) || 24;
             // Draw tier background
             ctx.fillStyle = '#363636';
             roundRect(ctx, padding, currentY, canvas.width - padding * 2, tierHeight, 8);
             ctx.fill();
 
             // Draw tier label
-            ctx.fillStyle = tier.getAttribute('data-color') || '#FF4D4D';
+            ctx.fillStyle = tierColor;
             roundRect(ctx, padding, currentY, labelWidth, tierHeight, 8);
             ctx.fill();
 
             // Draw tier label text
+            ctx.save();
             ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 24px Arial';
+            ctx.font = `bold ${tierFontSize}px Nunito, Arial, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(tier.getAttribute('data-tier'), padding + labelWidth / 2, currentY + tierHeight / 2);
+            ctx.restore();
 
             // Draw items
             const items = Array.from(tier.querySelector('.tier-content').children);
-            let itemX = padding + labelWidth + 12;
-            const itemY = currentY + 12;
+            let itemX = padding + labelWidth + itemBoxGap;
+            const itemY = currentY + (tierHeight - itemBoxSize) / 2;
 
             for (const item of items) {
                 const img = item.querySelector('img');
+                // Draw item background
+                ctx.fillStyle = '#2d2d2d';
+                roundRect(ctx, itemX, itemY, itemBoxSize, itemBoxSize, 8);
+                ctx.fill();
+
+                // Draw item border
+                ctx.strokeStyle = '#4d4d4d';
+                ctx.lineWidth = 2;
+                roundRect(ctx, itemX, itemY, itemBoxSize, itemBoxSize, 8);
+                ctx.stroke();
+
+                // Draw the image
                 if (img) {
-                    // Draw item background
-                    ctx.fillStyle = '#2d2d2d';
-                    roundRect(ctx, itemX, itemY, 70, 70, 8);
-                    ctx.fill();
-
-                    // Draw item border
-                    ctx.strokeStyle = '#4d4d4d';
-                    ctx.lineWidth = 2;
-                    roundRect(ctx, itemX, itemY, 70, 70, 8);
-                    ctx.stroke();
-
-                    // Draw the image
-                    const imgWidth = img.width;
-                    const imgHeight = img.height;
-                    const scale = Math.min(60 / imgWidth, 60 / imgHeight);
+                    const imgWidth = img.naturalWidth || img.width;
+                    const imgHeight = img.naturalHeight || img.height;
+                    const scale = Math.min((itemBoxSize * 0.92) / imgWidth, (itemBoxSize * 0.76) / imgHeight);
                     const scaledWidth = imgWidth * scale;
                     const scaledHeight = imgHeight * scale;
-                    const imgX = itemX + (70 - scaledWidth) / 2;
-                    const imgY = itemY + (70 - scaledHeight) / 2;
-
+                    const imgX = itemX + (itemBoxSize - scaledWidth) / 2;
+                    const imgY = itemY + (itemBoxSize - labelBoxHeight - scaledHeight) / 2;
                     ctx.drawImage(img, imgX, imgY, scaledWidth, scaledHeight);
-
-                    // Draw item name
-                    ctx.fillStyle = '#e0e0e0';
-                    ctx.font = '10px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(item.getAttribute('data-name'), itemX + 35, itemY + 60);
                 }
-                itemX += 82; // 70px width + 12px gap
+
+                // Draw item label inside the frame at the bottom
+                ctx.save();
+                ctx.fillStyle = labelBg;
+                ctx.fillRect(itemX, itemY + itemBoxSize - labelBoxHeight, itemBoxSize, labelBoxHeight);
+                ctx.font = labelFont;
+                ctx.fillStyle = labelTextColor;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const label = item.getAttribute('data-name');
+                ctx.fillText(label, itemX + itemBoxSize / 2, itemY + itemBoxSize - labelBoxHeight / 2 + 1);
+                ctx.restore();
+
+                itemX += itemBoxSize + itemBoxGap;
             }
 
             currentY += tierHeight + 12; // Add gap between tiers
@@ -843,7 +886,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Fullscreen popup for item images
-    function showImagePopup(src) {
+    function showImagePopup(src, labelText = null) {
         let popup = document.getElementById('imagePopupModal');
         if (!popup) {
             popup = document.createElement('div');
@@ -855,10 +898,11 @@ document.addEventListener('DOMContentLoaded', () => {
             popup.style.height = '100vh';
             popup.style.background = 'rgba(0,0,0,0.95)';
             popup.style.display = 'flex';
+            popup.style.flexDirection = 'column';
             popup.style.alignItems = 'center';
             popup.style.justifyContent = 'center';
             popup.style.zIndex = '10001';
-            popup.innerHTML = '<img style="border-radius:16px; box-shadow:0 8px 32px #000;">';
+            popup.innerHTML = '<img style="border-radius:16px; box-shadow:0 8px 32px #000;"><div id="popupLabel" style="margin-top:32px; color:#fff; font-family:Nunito,Arial,sans-serif; font-size:2.2em; font-weight:bold; text-align:center; max-width:90vw; word-break:break-word;"></div>';
             document.body.appendChild(popup);
             popup.addEventListener('click', () => popup.style.display = 'none');
             window.addEventListener('keydown', function escListener(e) {
@@ -866,19 +910,36 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         const img = popup.querySelector('img');
+        const labelDiv = popup.querySelector('#popupLabel');
         img.onload = function() {
             // 3x natural size, but clamp to viewport
             let w = img.naturalWidth * 3;
             let h = img.naturalHeight * 3;
             const vw = window.innerWidth;
             const vh = window.innerHeight;
-            let scale = Math.min(vw / w, vh / h, 1);
+            let scale = Math.min(vw / w, (vh - 120) / h, 1); // leave space for label
             img.style.width = (w * scale) + 'px';
             img.style.height = (h * scale) + 'px';
             img.style.maxWidth = '';
             img.style.maxHeight = '';
         };
         img.src = src;
+        if (labelText) {
+            labelDiv.textContent = labelText;
+            labelDiv.style.display = '';
+        } else {
+            labelDiv.textContent = '';
+            labelDiv.style.display = 'none';
+        }
         popup.style.display = 'flex';
+    }
+
+    // Ensure counter is visible on load
+    itemPoolCounter.style.display = '';
+
+    // Helper to observe a new tier-content
+    function observeTierContent(tc) {
+        observer.observe(tc, { childList: true });
+        updateItemPoolCounter();
     }
 }); 
