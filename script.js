@@ -46,6 +46,111 @@ document.addEventListener('DOMContentLoaded', () => {
     // Track hovered item/tier
     let hoveredElement = null;
 
+    // --- Tierlist Title Editing ---
+    const tierlistTitle = document.getElementById('tierlistTitle');
+    const editTitleBtn = document.getElementById('editTitleBtn');
+    let currentTierlistTitle = 'Untitled Tierlist';
+
+    function setTierlistTitle(title) {
+        currentTierlistTitle = title;
+        tierlistTitle.textContent = title;
+    }
+    editTitleBtn.addEventListener('click', () => {
+        const newTitle = prompt('Enter tierlist title:', currentTierlistTitle);
+        if (newTitle && newTitle.trim()) setTierlistTitle(newTitle.trim());
+    });
+    setTierlistTitle('Untitled Tierlist');
+
+    // --- Developer Tools Toggle ---
+    const devToolsToggle = document.getElementById('devToolsToggle');
+    let devToolsEnabled = false;
+    devToolsToggle.addEventListener('change', () => {
+        devToolsEnabled = devToolsToggle.checked;
+        document.querySelectorAll('.item-edit-icon').forEach(icon => {
+            icon.style.display = devToolsEnabled ? '' : 'none';
+        });
+    });
+
+    // --- Item Edit Modal ---
+    let editItemModal = null;
+    function showEditItemModal(item) {
+        if (editItemModal) editItemModal.remove();
+        editItemModal = document.createElement('div');
+        editItemModal.className = 'modal';
+        editItemModal.style.display = 'flex';
+        editItemModal.innerHTML = `
+            <div class="modal-content">
+                <h3>Edit Item</h3>
+                <form id="editItemForm">
+                    <label for="editItemName">Name:</label>
+                    <input type="text" id="editItemName" name="editItemName" required maxlength="32" autocomplete="off" value="${item.getAttribute('data-name') || ''}" />
+                    <label for="editItemImage">Image:</label>
+                    <input type="file" id="editItemImage" name="editItemImage" accept="image/*" />
+                    <div class="image-preview" id="editImagePreview"></div>
+                    <div class="modal-actions">
+                        <button type="submit">Save</button>
+                        <button type="button" id="cancelEditItem">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(editItemModal);
+        const form = editItemModal.querySelector('#editItemForm');
+        const nameInput = editItemModal.querySelector('#editItemName');
+        const imageInput = editItemModal.querySelector('#editItemImage');
+        const preview = editItemModal.querySelector('#editImagePreview');
+        const cancelBtn = editItemModal.querySelector('#cancelEditItem');
+        // Show current image
+        const img = item.querySelector('img');
+        if (img) {
+            const previewImg = document.createElement('img');
+            previewImg.src = img.src;
+            previewImg.style.maxWidth = '100%';
+            previewImg.style.maxHeight = '100%';
+            preview.appendChild(previewImg);
+        }
+        // Handle image change
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                preview.innerHTML = '';
+                const previewImg = document.createElement('img');
+                previewImg.src = ev.target.result;
+                previewImg.style.maxWidth = '100%';
+                previewImg.style.maxHeight = '100%';
+                preview.appendChild(previewImg);
+            };
+            reader.readAsDataURL(file);
+        });
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            // Update name
+            const newName = nameInput.value.trim();
+            if (newName) {
+                item.setAttribute('data-name', newName);
+                const label = item.querySelector('.item-label');
+                if (label) label.textContent = newName;
+            }
+            // Update image if changed
+            const file = imageInput.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    item.setAttribute('data-img', ev.target.result);
+                    const img = item.querySelector('img');
+                    if (img) img.src = ev.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+            editItemModal.remove();
+        });
+        cancelBtn.addEventListener('click', () => {
+            editItemModal.remove();
+        });
+    }
+
     function updateItemPoolCounter() {
         const poolCount = itemPool.children.length;
         let total = poolCount;
@@ -83,6 +188,32 @@ document.addEventListener('DOMContentLoaded', () => {
             e.stopPropagation();
             showImagePopup(img.src, item.getAttribute('data-name'));
         };
+        // Add edit pencil icon (only if devToolsEnabled)
+        let editIcon = item.querySelector('.item-edit-icon');
+        if (!editIcon) {
+            editIcon = document.createElement('div');
+            editIcon.className = 'item-edit-icon';
+            editIcon.title = 'Edit item';
+            editIcon.style.display = devToolsEnabled ? '' : 'none';
+            editIcon.style.position = 'absolute';
+            editIcon.style.top = '4px';
+            editIcon.style.right = '26px';
+            editIcon.style.width = '18px';
+            editIcon.style.height = '18px';
+            editIcon.style.background = 'rgba(30,30,30,0.85)';
+            editIcon.style.borderRadius = '50%';
+            editIcon.style.display = devToolsEnabled ? '' : 'none';
+            editIcon.style.alignItems = 'center';
+            editIcon.style.justifyContent = 'center';
+            editIcon.style.cursor = 'pointer';
+            editIcon.style.zIndex = '2';
+            editIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 20 20"><path d="M14.69 2.86a2.1 2.1 0 0 1 2.97 2.97l-9.5 9.5-3.12.44a1 1 0 0 1-1.13-1.13l.44-3.12 9.5-9.5zm1.41 1.41l-1.41-1.41-9.5 9.5-.44 3.12 3.12-.44 9.5-9.5z" fill="#e0e0e0"/></svg>`;
+            item.appendChild(editIcon);
+        }
+        editIcon.onclick = (e) => {
+            e.stopPropagation();
+            showEditItemModal(item);
+        };
         return item;
     };
     // Patch createItemFromData to add hover listeners and zoom icon (patch only once)
@@ -103,6 +234,32 @@ document.addEventListener('DOMContentLoaded', () => {
         zoomIcon.onclick = (e) => {
             e.stopPropagation();
             showImagePopup(img.src, item.getAttribute('data-name'));
+        };
+        // Add edit pencil icon (only if devToolsEnabled)
+        let editIcon = item.querySelector('.item-edit-icon');
+        if (!editIcon) {
+            editIcon = document.createElement('div');
+            editIcon.className = 'item-edit-icon';
+            editIcon.title = 'Edit item';
+            editIcon.style.display = devToolsEnabled ? '' : 'none';
+            editIcon.style.position = 'absolute';
+            editIcon.style.top = '4px';
+            editIcon.style.right = '26px';
+            editIcon.style.width = '18px';
+            editIcon.style.height = '18px';
+            editIcon.style.background = 'rgba(30,30,30,0.85)';
+            editIcon.style.borderRadius = '50%';
+            editIcon.style.display = devToolsEnabled ? '' : 'none';
+            editIcon.style.alignItems = 'center';
+            editIcon.style.justifyContent = 'center';
+            editIcon.style.cursor = 'pointer';
+            editIcon.style.zIndex = '2';
+            editIcon.innerHTML = `<svg width="12" height="12" viewBox="0 0 20 20"><path d="M14.69 2.86a2.1 2.1 0 0 1 2.97 2.97l-9.5 9.5-3.12.44a1 1 0 0 1-1.13-1.13l.44-3.12 9.5-9.5zm1.41 1.41l-1.41-1.41-9.5 9.5-.44 3.12 3.12-.44 9.5-9.5z" fill="#e0e0e0"/></svg>`;
+            item.appendChild(editIcon);
+        }
+        editIcon.onclick = (e) => {
+            e.stopPropagation();
+            showEditItemModal(item);
         };
         return item;
     };
@@ -608,24 +765,36 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTierlistInput.addEventListener('change', loadTierlist);
     saveScreenshotButton.addEventListener('click', saveScreenshot);
 
+    function sanitizeFileName(name) {
+        return name.replace(/[^a-z0-9\-\_\(\)\[\]\s]/gi, '').replace(/\s+/g, '_').substring(0, 64) || 'tierlist';
+    }
+
     async function saveTierlist() {
-        // Collect tierlist data including items in each tier
+        // Collect all items from both tiers and pool into poolItems
+        const poolItems = [];
+        // Items from pool
+        Array.from(itemPool.children).forEach(item => {
+            poolItems.push({
+                name: item.getAttribute('data-name'),
+                image: item.getAttribute('data-img')
+            });
+        });
+        // Items from tiers
+        Array.from(tierList.children).forEach(tier => {
+            Array.from(tier.querySelector('.tier-content').children).forEach(item => {
+                poolItems.push({
+                    name: item.getAttribute('data-name'),
+                    image: item.getAttribute('data-img')
+                });
+            });
+        });
+        // Save tiers as empty
         const tiers = Array.from(tierList.children).map(tier => ({
             name: tier.getAttribute('data-tier'),
             color: tier.getAttribute('data-color'),
             fontSize: parseInt(tier.getAttribute('data-font-size'), 10) || 24,
-            items: Array.from(tier.querySelector('.tier-content').children).map(item => ({
-                name: item.getAttribute('data-name'),
-                image: item.getAttribute('data-img')
-            }))
+            items: []
         }));
-
-        // Collect item pool data
-        const poolItems = Array.from(itemPool.children).map(item => ({
-            name: item.getAttribute('data-name'),
-            image: item.getAttribute('data-img')
-        }));
-
         // Compress images to PNG (preserve alpha)
         const compressImage = async (dataUrl) => {
             return new Promise((resolve) => {
@@ -653,36 +822,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 img.src = dataUrl;
             });
         };
-
-        // Compress all images from both tiers and pool
-        const compressPromises = [];
-        tiers.forEach(tier => {
-            tier.items.forEach(item => {
-                compressPromises.push(
-                    compressImage(item.image).then(compressed => item.image = compressed)
-                );
-            });
-        });
-        poolItems.forEach(item => {
-            compressPromises.push(
-                compressImage(item.image).then(compressed => item.image = compressed)
-            );
-        });
-        
+        // Compress all images from pool
+        const compressPromises = poolItems.map(item =>
+            compressImage(item.image).then(compressed => item.image = compressed)
+        );
         await Promise.all(compressPromises);
-
         // Create and save the file
         const data = {
+            title: currentTierlistTitle,
+            creator: currentCreator,
             tiers,
             poolItems,
-            version: '1.0'
+            version: '1.1'
         };
-
         const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'tierlist.btier';
+        a.download = sanitizeFileName(currentTierlistTitle) + '.btier';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -692,43 +849,60 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadTierlist(e) {
         const file = e.target.files[0];
         if (!file) return;
-
         try {
             const text = await file.text();
             const data = JSON.parse(text);
-
             // Clear current tierlist
             tierList.innerHTML = '';
             itemPool.innerHTML = '';
-
-            // Create tiers and add their items
-            data.tiers.forEach(tier => {
-                const tierRow = createTier(tier.name, tier.color || '#FF4D4D', tier.fontSize || 24);
-                const tierContent = tierRow.querySelector('.tier-content');
-                
-                // Add items to tier
-                if (tier.items) {
-                    tier.items.forEach(item => {
-                        const itemElement = createItemFromData(item);
-                        tierContent.appendChild(itemElement);
+            // If version is missing or < 1.1, load all items into pool
+            if (!data.version || data.version < '1.1') {
+                // Gather all items from tiers and pool
+                const allItems = [];
+                if (data.tiers) {
+                    data.tiers.forEach(tier => {
+                        if (tier.items) allItems.push(...tier.items);
                     });
                 }
-                // Observe for item changes
-                observeTierContent(tierContent);
-            });
-
-            // Add items to pool
-            data.poolItems.forEach(item => {
-                const itemElement = createItemFromData(item);
-                itemPool.appendChild(itemElement);
-            });
+                if (data.poolItems) allItems.push(...data.poolItems);
+                allItems.forEach(item => {
+                    const itemElement = createItemFromData(item);
+                    itemPool.appendChild(itemElement);
+                });
+                // Create tiers (empty)
+                if (data.tiers) {
+                    data.tiers.forEach(tier => {
+                        createTier(tier.name, tier.color || '#FF4D4D', tier.fontSize || 24);
+                    });
+                }
+            } else {
+                // Create tiers and add their items (should be empty in v1.1+)
+                data.tiers.forEach(tier => {
+                    const tierRow = createTier(tier.name, tier.color || '#FF4D4D', tier.fontSize || 24);
+                    const tierContent = tierRow.querySelector('.tier-content');
+                    // Add items to tier (should be empty)
+                    if (tier.items) {
+                        tier.items.forEach(item => {
+                            const itemElement = createItemFromData(item);
+                            tierContent.appendChild(itemElement);
+                        });
+                    }
+                    // Observe for item changes
+                    observeTierContent(tierContent);
+                });
+                // Add items to pool
+                data.poolItems.forEach(item => {
+                    const itemElement = createItemFromData(item);
+                    itemPool.appendChild(itemElement);
+                });
+            }
             updateItemPoolCounter();
-
+            if (data.title) setTierlistTitle(data.title);
+            if (data.creator) setCreator(data.creator);
         } catch (error) {
             console.error('Error loading tierlist:', error);
             alert('Error loading tierlist file. Please make sure it\'s a valid .btier file.');
         }
-
         // Clear the input so the same file can be loaded again
         e.target.value = '';
     }
@@ -759,23 +933,32 @@ document.addEventListener('DOMContentLoaded', () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         const padding = 20;
-
-        // Get the tierlist element
         const tierListEl = document.getElementById('tierList');
-        const rect = tierListEl.getBoundingClientRect();
-
-        // Set canvas size to match tierlist plus padding
-        canvas.width = rect.width + (padding * 2);
-        canvas.height = rect.height + (padding * 2);
-
+        // Calculate required canvas height by simulating wrapping
+        const tiers = Array.from(tierListEl.children);
+        const labelWidth = 100;
+        const itemBoxSize = 88;
+        const itemBoxGap = 12;
+        let totalHeight = padding;
+        const tierHeights = [];
+        for (const tier of tiers) {
+            const items = Array.from(tier.querySelector('.tier-content').children);
+            const tierContentWidth = tier.querySelector('.tier-content').clientWidth || (tierListEl.clientWidth - labelWidth - itemBoxGap);
+            const itemsPerRow = Math.max(1, Math.floor((tierContentWidth) / (itemBoxSize + itemBoxGap)));
+            const numRows = Math.ceil(items.length / itemsPerRow);
+            const tierHeight = Math.max(itemBoxSize + 12, numRows * (itemBoxSize + itemBoxGap) + 12);
+            tierHeights.push(tierHeight);
+            totalHeight += tierHeight + 12;
+        }
+        totalHeight += padding;
+        canvas.width = tierListEl.clientWidth + (padding * 2);
+        canvas.height = totalHeight;
         // Fill background
         ctx.fillStyle = '#1a1a1a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-
         // Use Nunito font
         ctx.font = 'bold 24px Nunito, Arial, sans-serif';
         ctx.textBaseline = 'middle';
-
         // Function to draw rounded rectangle
         function roundRect(ctx, x, y, width, height, radius) {
             ctx.beginPath();
@@ -790,35 +973,22 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.quadraticCurveTo(x, y, x + radius, y);
             ctx.closePath();
         }
-
         // Draw each tier
-        const tiers = Array.from(tierListEl.children);
         let currentY = padding;
-        const itemBoxSize = 88;
-        const itemBoxGap = 12;
-        const labelHeight = 24; // for the label at the bottom
-        const labelFont = 'bold 16px Nunito, Arial, sans-serif';
-        const labelBg = 'rgba(30,30,30,0.85)';
-        const labelPad = 4;
-        const labelTextColor = '#e0e0e0';
-        const labelLineHeight = 1.1;
         const labelBoxHeight = 22;
-        const labelFontSize = 16;
-        for (const tier of tiers) {
-            const tierHeight = tier.offsetHeight;
-            const labelWidth = 100; // Fixed width of tier labels
+        for (let t = 0; t < tiers.length; ++t) {
+            const tier = tiers[t];
+            const tierHeight = tierHeights[t];
             const tierColor = tier.getAttribute('data-color') || '#FF4D4D';
             const tierFontSize = parseInt(tier.getAttribute('data-font-size'), 10) || 24;
             // Draw tier background
             ctx.fillStyle = '#363636';
             roundRect(ctx, padding, currentY, canvas.width - padding * 2, tierHeight, 8);
             ctx.fill();
-
             // Draw tier label
             ctx.fillStyle = tierColor;
             roundRect(ctx, padding, currentY, labelWidth, tierHeight, 8);
             ctx.fill();
-
             // Draw tier label text
             ctx.save();
             ctx.fillStyle = '#FFFFFF';
@@ -827,55 +997,53 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.textBaseline = 'middle';
             ctx.fillText(tier.getAttribute('data-tier'), padding + labelWidth / 2, currentY + tierHeight / 2);
             ctx.restore();
-
-            // Draw items
+            // Draw items, wrapping to rows
             const items = Array.from(tier.querySelector('.tier-content').children);
-            let itemX = padding + labelWidth + itemBoxGap;
-            const itemY = currentY + (tierHeight - itemBoxSize) / 2;
-
-            for (const item of items) {
-                const img = item.querySelector('img');
-                // Draw item background
-                ctx.fillStyle = '#2d2d2d';
-                roundRect(ctx, itemX, itemY, itemBoxSize, itemBoxSize, 8);
-                ctx.fill();
-
-                // Draw item border
-                ctx.strokeStyle = '#4d4d4d';
-                ctx.lineWidth = 2;
-                roundRect(ctx, itemX, itemY, itemBoxSize, itemBoxSize, 8);
-                ctx.stroke();
-
-                // Draw the image
-                if (img) {
-                    const imgWidth = img.naturalWidth || img.width;
-                    const imgHeight = img.naturalHeight || img.height;
-                    const scale = Math.min((itemBoxSize * 0.92) / imgWidth, (itemBoxSize * 0.76) / imgHeight);
-                    const scaledWidth = imgWidth * scale;
-                    const scaledHeight = imgHeight * scale;
-                    const imgX = itemX + (itemBoxSize - scaledWidth) / 2;
-                    const imgY = itemY + (itemBoxSize - labelBoxHeight - scaledHeight) / 2;
-                    ctx.drawImage(img, imgX, imgY, scaledWidth, scaledHeight);
+            const tierContentWidth = tier.querySelector('.tier-content').clientWidth || (tierListEl.clientWidth - labelWidth - itemBoxGap);
+            const itemsPerRow = Math.max(1, Math.floor((tierContentWidth) / (itemBoxSize + itemBoxGap)));
+            for (let row = 0; row < Math.ceil(items.length / itemsPerRow); ++row) {
+                for (let col = 0; col < itemsPerRow; ++col) {
+                    const idx = row * itemsPerRow + col;
+                    if (idx >= items.length) break;
+                    const item = items[idx];
+                    const itemX = padding + labelWidth + itemBoxGap + col * (itemBoxSize + itemBoxGap);
+                    const itemY = currentY + 12 + row * (itemBoxSize + itemBoxGap);
+                    // Draw item background
+                    ctx.fillStyle = '#2d2d2d';
+                    roundRect(ctx, itemX, itemY, itemBoxSize, itemBoxSize, 8);
+                    ctx.fill();
+                    // Draw item border
+                    ctx.strokeStyle = '#4d4d4d';
+                    ctx.lineWidth = 2;
+                    roundRect(ctx, itemX, itemY, itemBoxSize, itemBoxSize, 8);
+                    ctx.stroke();
+                    // Draw the image
+                    const img = item.querySelector('img');
+                    if (img) {
+                        const imgWidth = img.naturalWidth || img.width;
+                        const imgHeight = img.naturalHeight || img.height;
+                        const scale = Math.min((itemBoxSize * 0.92) / imgWidth, (itemBoxSize * 0.76) / imgHeight);
+                        const scaledWidth = imgWidth * scale;
+                        const scaledHeight = imgHeight * scale;
+                        const imgX = itemX + (itemBoxSize - scaledWidth) / 2;
+                        const imgY = itemY + (itemBoxSize - labelBoxHeight - scaledHeight) / 2;
+                        ctx.drawImage(img, imgX, imgY, scaledWidth, scaledHeight);
+                    }
+                    // Draw item label inside the frame at the bottom
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(30,30,30,0.85)';
+                    ctx.fillRect(itemX, itemY + itemBoxSize - labelBoxHeight, itemBoxSize, labelBoxHeight);
+                    ctx.font = 'bold 16px Nunito, Arial, sans-serif';
+                    ctx.fillStyle = '#e0e0e0';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    const label = item.getAttribute('data-name');
+                    ctx.fillText(label, itemX + itemBoxSize / 2, itemY + itemBoxSize - labelBoxHeight / 2 + 1);
+                    ctx.restore();
                 }
-
-                // Draw item label inside the frame at the bottom
-                ctx.save();
-                ctx.fillStyle = labelBg;
-                ctx.fillRect(itemX, itemY + itemBoxSize - labelBoxHeight, itemBoxSize, labelBoxHeight);
-                ctx.font = labelFont;
-                ctx.fillStyle = labelTextColor;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                const label = item.getAttribute('data-name');
-                ctx.fillText(label, itemX + itemBoxSize / 2, itemY + itemBoxSize - labelBoxHeight / 2 + 1);
-                ctx.restore();
-
-                itemX += itemBoxSize + itemBoxGap;
             }
-
-            currentY += tierHeight + 12; // Add gap between tiers
+            currentY += tierHeight + 12;
         }
-
         // Save the canvas as PNG
         const link = document.createElement('a');
         link.download = 'tierlist.png';
@@ -942,4 +1110,202 @@ document.addEventListener('DOMContentLoaded', () => {
         observer.observe(tc, { childList: true });
         updateItemPoolCounter();
     }
+
+    // Tab switching logic
+    const tabCreate = document.getElementById('tab-create');
+    const tabExplore = document.getElementById('tab-explore');
+    const tabContentCreate = document.getElementById('tab-content-create');
+    const tabContentExplore = document.getElementById('tab-content-explore');
+
+    function showTab(tab) {
+        if (tab === 'create') {
+            tabCreate.classList.add('active');
+            tabExplore.classList.remove('active');
+            tabContentCreate.style.display = '';
+            tabContentExplore.style.display = 'none';
+        } else {
+            tabCreate.classList.remove('active');
+            tabExplore.classList.add('active');
+            tabContentCreate.style.display = 'none';
+            tabContentExplore.style.display = '';
+            loadExploreTierlists();
+        }
+    }
+
+    tabCreate.addEventListener('click', () => showTab('create'));
+    tabExplore.addEventListener('click', () => showTab('explore'));
+
+    // Explore tab logic
+    async function loadExploreTierlists() {
+        const grid = document.getElementById('explore-grid');
+        const searchInput = document.getElementById('explore-search');
+        grid.innerHTML = '<div style="opacity:0.7;">Loading tierlists...</div>';
+        let tierlists = [];
+        try {
+            // Get all .btier files in /explore (simulate index.json as array of filenames)
+            const res = await fetch('explore/index.json');
+            const index = await res.json(); // now just ["pokemon-gen1.btier", ...]
+            tierlists = await Promise.all(index.map(async filename => {
+                try {
+                    const dataRes = await fetch(`explore/${filename}`);
+                    const data = await dataRes.json();
+                    return { ...data, filename };
+                } catch (e) {
+                    return null;
+                }
+            }));
+            tierlists = tierlists.filter(Boolean);
+        } catch (e) {
+            grid.innerHTML = '<div style="color:#e57373;">Failed to load tierlists.</div>';
+            return;
+        }
+        function renderGrid(filter = '') {
+            grid.innerHTML = '';
+            let filtered = tierlists;
+            if (filter) {
+                const f = filter.toLowerCase();
+                filtered = tierlists.filter(t =>
+                    (t.title && t.title.toLowerCase().includes(f)) ||
+                    (t.creator && t.creator.toLowerCase().includes(f))
+                );
+            }
+            if (!filtered.length) {
+                grid.innerHTML = '<div style="opacity:0.7;">No tierlists found.</div>';
+                return;
+            }
+            filtered.forEach(tierlist => {
+                const card = document.createElement('div');
+                card.className = 'explore-card';
+                card.style.background = '#232323';
+                card.style.borderRadius = '12px';
+                card.style.boxShadow = '0 2px 12px #0006';
+                card.style.padding = '18px 14px 14px 14px';
+                card.style.display = 'flex';
+                card.style.flexDirection = 'column';
+                card.style.alignItems = 'center';
+                card.style.cursor = 'pointer';
+                card.style.transition = 'transform 0.15s, box-shadow 0.15s';
+                card.style.position = 'relative';
+                card.style.overflow = 'hidden';
+                card.onmouseenter = () => { card.style.transform = 'scale(1.03)'; card.style.boxShadow = '0 4px 24px #000a'; };
+                card.onmouseleave = () => { card.style.transform = ''; card.style.boxShadow = '0 2px 12px #0006'; };
+                // Generate preview image
+                const preview = document.createElement('div');
+                preview.style.width = '100%';
+                preview.style.height = '140px';
+                preview.style.background = '#181818';
+                preview.style.borderRadius = '8px';
+                preview.style.display = 'grid';
+                preview.style.gridTemplateColumns = 'repeat(3, 1fr)';
+                preview.style.gridTemplateRows = 'repeat(3, 1fr)';
+                preview.style.gap = '4px';
+                preview.style.marginBottom = '12px';
+                preview.style.overflow = 'hidden';
+                const items = [];
+                tierlist.tiers && tierlist.tiers.forEach(tier => {
+                    if (tier.items) items.push(...tier.items);
+                });
+                tierlist.poolItems && items.push(...tierlist.poolItems);
+                for (let i = 0; i < Math.min(9, items.length); ++i) {
+                    const it = items[i];
+                    const img = document.createElement('img');
+                    img.src = it.image;
+                    img.alt = it.name;
+                    img.title = it.name;
+                    img.style.width = '100%';
+                    img.style.height = '100%';
+                    img.style.objectFit = 'contain';
+                    img.style.background = '#222';
+                    img.style.borderRadius = '6px';
+                    preview.appendChild(img);
+                }
+                card.appendChild(preview);
+                // Title
+                const title = document.createElement('div');
+                title.textContent = tierlist.title || tierlist.filename.replace(/\.btier$/, '');
+                title.style.fontWeight = 'bold';
+                title.style.fontSize = '1.15em';
+                title.style.marginBottom = '2px';
+                title.style.textAlign = 'center';
+                card.appendChild(title);
+                // Creator
+                if (tierlist.creator) {
+                    const creator = document.createElement('div');
+                    creator.textContent = '@' + tierlist.creator.replace(/^@/, '');
+                    creator.style.fontSize = '0.92em';
+                    creator.style.color = '#b0b0b0';
+                    creator.style.opacity = '0.7';
+                    creator.style.marginBottom = '2px';
+                    creator.style.textAlign = 'center';
+                    card.appendChild(creator);
+                }
+                card.addEventListener('click', () => {
+                    showTab('create');
+                    loadTierlistFromData(tierlist);
+                    setTierlistTitle(tierlist.title || tierlist.filename.replace(/\.btier$/, ''));
+                    setCreator(tierlist.creator || '');
+                });
+                grid.appendChild(card);
+            });
+        }
+        renderGrid();
+        searchInput.oninput = e => renderGrid(e.target.value);
+    }
+
+    function loadTierlistFromData(data) {
+        // Clear current tierlist
+        tierList.innerHTML = '';
+        itemPool.innerHTML = '';
+        // Create tiers and add their items
+        data.tiers.forEach(tier => {
+            const tierRow = createTier(tier.name, tier.color || '#FF4D4D', tier.fontSize || 24);
+            const tierContent = tierRow.querySelector('.tier-content');
+            // Add items to tier
+            if (tier.items) {
+                tier.items.forEach(item => {
+                    const itemElement = createItemFromData(item);
+                    tierContent.appendChild(itemElement);
+                });
+            }
+            // Observe for item changes
+            observeTierContent(tierContent);
+        });
+        // Add items to pool
+        data.poolItems.forEach(item => {
+            const itemElement = createItemFromData(item);
+            itemPool.appendChild(itemElement);
+        });
+        updateItemPoolCounter();
+        if (data.title) setTierlistTitle(data.title);
+        if (data.creator) setCreator(data.creator);
+    }
+
+    // Creator logic
+    const creatorText = document.createElement('div');
+    creatorText.id = 'creatorText';
+    creatorText.style.fontFamily = "Nunito, Arial, sans-serif";
+    creatorText.style.fontSize = '1.1em';
+    creatorText.style.opacity = '0.5';
+    creatorText.style.marginTop = '-0.7em';
+    creatorText.style.marginBottom = '1.2em';
+    creatorText.style.textAlign = 'left';
+    creatorText.style.cursor = 'pointer';
+    creatorText.style.userSelect = 'text';
+    creatorText.style.minHeight = '1.2em';
+    creatorText.style.transition = 'opacity 0.2s';
+    creatorText.addEventListener('click', () => {
+        const newCreator = prompt('Enter creator name (without @):', creatorText.textContent.replace(/^@/, ''));
+        if (newCreator !== null) setCreator(newCreator);
+    });
+    function setCreator(name) {
+        creatorText.textContent = name ? '@' + name.replace(/^@/, '') : '';
+        currentCreator = name ? name.replace(/^@/, '') : '';
+    }
+    let currentCreator = '';
+    // Insert creatorText under the title
+    const titleRow = document.querySelector('.tierlist-title-row');
+    if (titleRow && !document.getElementById('creatorText')) {
+        titleRow.appendChild(creatorText);
+    }
+    setCreator('');
 }); 
