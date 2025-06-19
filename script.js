@@ -1140,26 +1140,92 @@ document.addEventListener('DOMContentLoaded', () => {
         const grid = document.getElementById('explore-grid');
         const searchInput = document.getElementById('explore-search');
         grid.innerHTML = '<div style="opacity:0.7;">Loading tierlists...</div>';
-        let tierlists = [];
+        let filenames = [];
         try {
-            // Get all .btier files in /explore (simulate index.json as array of filenames)
             const res = await fetch('explore/index.json');
-            const index = await res.json(); // now just ["pokemon-gen1.btier", ...]
-            tierlists = await Promise.all(index.map(async filename => {
-                try {
-                    const dataRes = await fetch(`explore/${filename}`);
-                    const data = await dataRes.json();
-                    return { ...data, filename };
-                } catch (e) {
-                    return null;
-                }
-            }));
-            tierlists = tierlists.filter(Boolean);
+            filenames = await res.json(); // ["pokemon-gen1.btier", ...]
         } catch (e) {
             grid.innerHTML = '<div style="color:#e57373;">Failed to load tierlists.</div>';
             return;
         }
-        function renderGrid(filter = '') {
+        // Get file sizes using HEAD requests
+        async function getFileSize(filename) {
+            try {
+                const res = await fetch(`explore/${filename}`, { method: 'HEAD' });
+                const size = res.headers.get('content-length');
+                return { filename, size: size ? parseInt(size, 10) : 0 };
+            } catch {
+                return { filename, size: 0 };
+            }
+        }
+        let fileMeta = await Promise.all(filenames.map(getFileSize));
+        // Helper to load and parse a .btier file
+        async function loadTierlistFile(filename) {
+            try {
+                const dataRes = await fetch(`explore/${filename}`);
+                const data = await dataRes.json();
+                return { ...data, filename };
+            } catch {
+                return null;
+            }
+        }
+        // Progressive loading logic
+        let tierlists = [];
+        let loading = false;
+        let lastSearch = '';
+        async function progressiveLoad(filter = '') {
+            grid.innerHTML = '';
+            lastSearch = filter;
+            // Prioritize search matches
+            const f = filter.toLowerCase();
+            let matches = [], rest = [];
+            for (const meta of fileMeta) {
+                if (!f) {
+                    rest.push(meta);
+                } else {
+                    // Try to use cached title/creator if already loaded
+                    const cached = tierlists.find(t => t && t.filename === meta.filename);
+                    if (cached && ((cached.title && cached.title.toLowerCase().includes(f)) || (cached.creator && cached.creator.toLowerCase().includes(f)))) {
+                        matches.push(meta);
+                    } else {
+                        rest.push(meta);
+                    }
+                }
+            }
+            // If searching, load matches first, then rest
+            let sortedMeta = [];
+            if (f) {
+                // Load all files to check for matches
+                let allLoaded = await Promise.all(fileMeta.map(async meta => {
+                    const t = tierlists.find(t => t && t.filename === meta.filename) || await loadTierlistFile(meta.filename);
+                    if (t && ((t.title && t.title.toLowerCase().includes(f)) || (t.creator && t.creator.toLowerCase().includes(f)))) {
+                        return { ...meta, match: true, data: t };
+                    } else {
+                        return { ...meta, match: false, data: t };
+                    }
+                }));
+                // Sort: matches first (by size), then rest (by size)
+                let matchList = allLoaded.filter(m => m.match).sort((a, b) => a.size - b.size);
+                let restList = allLoaded.filter(m => !m.match).sort((a, b) => a.size - b.size);
+                sortedMeta = [...matchList, ...restList];
+            } else {
+                sortedMeta = fileMeta.slice().sort((a, b) => a.size - b.size).map(m => ({ ...m, match: false }));
+            }
+            // Progressive rendering
+            tierlists = [];
+            let i = 0;
+            async function loadNext() {
+                if (i >= sortedMeta.length || lastSearch !== filter) return;
+                const meta = sortedMeta[i++];
+                let t = meta.data;
+                if (!t) t = await loadTierlistFile(meta.filename);
+                if (t) tierlists.push(t);
+                renderGrid(tierlists, filter);
+                setTimeout(loadNext, 80); // Stagger loading for smoothness
+            }
+            loadNext();
+        }
+        function renderGrid(tierlists, filter = '') {
             grid.innerHTML = '';
             let filtered = tierlists;
             if (filter) {
@@ -1248,33 +1314,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 grid.appendChild(card);
             });
         }
-        renderGrid();
-        searchInput.oninput = e => renderGrid(e.target.value);
+        // Initial load
+        progressiveLoad();
+        searchInput.oninput = e => progressiveLoad(e.target.value);
     }
 
     function loadTierlistFromData(data) {
         // Clear current tierlist
         tierList.innerHTML = '';
         itemPool.innerHTML = '';
-        // Create tiers and add their items
-        data.tiers.forEach(tier => {
-            const tierRow = createTier(tier.name, tier.color || '#FF4D4D', tier.fontSize || 24);
-            const tierContent = tierRow.querySelector('.tier-content');
-            // Add items to tier
-            if (tier.items) {
-                tier.items.forEach(item => {
-                    const itemElement = createItemFromData(item);
-                    tierContent.appendChild(itemElement);
-                });
-            }
-            // Observe for item changes
-            observeTierContent(tierContent);
-        });
-        // Add items to pool
-        data.poolItems.forEach(item => {
+        // For compatibility, always put all items in the pool (from both tiers and poolItems)
+        const allItems = [];
+        if (data.tiers) {
+            data.tiers.forEach(tier => {
+                if (tier.items) allItems.push(...tier.items);
+            });
+        }
+        if (data.poolItems) allItems.push(...data.poolItems);
+        allItems.forEach(item => {
             const itemElement = createItemFromData(item);
             itemPool.appendChild(itemElement);
         });
+        // Create tiers (empty)
+        if (data.tiers) {
+            data.tiers.forEach(tier => {
+                createTier(tier.name, tier.color || '#FF4D4D', tier.fontSize || 24);
+            });
+        }
         updateItemPoolCounter();
         if (data.title) setTierlistTitle(data.title);
         if (data.creator) setCreator(data.creator);
